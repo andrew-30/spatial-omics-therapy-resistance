@@ -1,0 +1,615 @@
+---
+title: "COXIS-high tumor nests and LRRC15⁺ CAF stroma form therapy-resistant niches in breast cancer"
+format: html
+editor: visual
+---
+
+**MOJGAN DARVISHI & ANDREW KISITU**
+
+# **INTRODUCTION**
+
+Breast cancer is a biologically and clinically heterogeneous disease in which therapeutic resistance remains a major cause of treatment failure. Although immune checkpoint blockade (ICB) has produced durable responses in some cancers, the majority of breast tumors do not respond, particularly those with immune-excluded or “cold” tumor microenvironments. Increasing evidence indicates that resistance is not determined solely by tumor cells, but emerges through interactions between malignant cells and surrounding stromal and immune components of the tumor microenvironment.
+
+Cyclooxygenase-2 (COX-2) signaling and its associated COXIS transcriptional program have been implicated in inflammation-driven tumor progression. COX-2–derived prostaglandin E₂ (PGE₂) promotes epithelial–mesenchymal transition (EMT), stress-adaptation programs, and suppression of anti-tumor immunity. In parallel, single-cell studies have identified a distinct subset of cancer-associated fibroblasts (CAFs) marked by LRRC15 expression. These LRRC15⁺ CAFs arise in response to TGF-β signaling, remodel extracellular matrix, and directly impair CD8⁺ T-cell effector function, thereby limiting response to checkpoint blockade. Tumor cells may also adopt stress-response states such as the hypoxia-related drug-resistant (HRDS) program, enabling survival under therapy pressure.
+
+However, most prior work has analyzed these processes using bulk transcriptomics or dissociated cells, which remove spatial architecture. The spatial arrangement of tumor cells, CAFs, and immune cells is increasingly recognized as critical for therapy response, yet the spatial relationship connecting COXIS-high tumor regions, LRRC15⁺ CAF localization, EMT/HRDS programs, and ICB non-responder signatures is not well understood.
+
+**-Research objective**
+
+This study used spatial transcriptomic data to evaluate how tumor-intrinsic COXIS signaling and microenvironmental resistance programs are organized within intact breast tumor tissue.
+
+We hypothesized that within breast tumors, spatially localized COXIS-high tumor nests are adjacent to LRRC15⁺ CAF-rich stroma, indicating spatially organized tumor–stroma ecosystems associated with therapy resistance.
+
+The overall objective was to determine whether COX-2 signaling is spatially associated with stromal remodeling and immune therapy resistance in breast cancer.
+
+# **METHODS AND MATERIALS**
+
+**-Study design**
+
+This investigation was designed as a computational spatial transcriptomic analysis. Our study compared gene expression signatures and biological pathways in spatially defined tumor and stromal regions within breast cancer tissue sections.
+
+-Data acquisition and preprocessing
+
+Spatial transcriptomic dataset (10x Genomix Visium) from breast tumors were analyzed. Raw count matrices and spatial coordinate information were imported as a spatial experiment.\
+
+Quality control steps included:
+
+-   removal of low-quality spots
+
+-   normalization of gene expression data
+
+-   Dimentionality reduction and Leiden clustering based on the normalized top 5% Highly Variable Genes(HVGs)
+
+Spots were annotated into major tissue compartments using pathology annotations and Leiden clustering i.e. tumor regions and cancer-associated fibroblast (CAF)–rich stromal regions.
+
+**- Spatial signature scoring and group comparison**
+
+To identify dominant transcriptional programs in an unbiased manner, we performed exploratory gene-signature scoring across all spatial spots without prior knowledge of which signatures would be relevant. Publicly available gene sets were systematically screened and scored, and enrichment patterns were evaluated across spatially defined groups. Signatures were not preselected based on expected biology but instead, they were interpreted only after enrichment patterns emerged from the data.\
+After scoring, CAF-rich and tumor-rich groups were compared statistically, and differences in signature enrichment between the groups were assessed using non-parametric tests.
+
+**- Differential expression and pathway enrichment**
+
+Differentially expressed genes were identified between tumor-enriched spots vs CAF-enriched spots after which Gene Ontology (GO) and pathway enrichment analysis was used to identify biological processes preferentially activated in each region.\
+Adjusted p-values were calculated using false discovery rate (FDR) correction. Statistical significance was defined as **adjusted p \< 0.05**.
+
+Figures were generated to display pathway enrichment and signature distribution among the Tumor and CAF groups.
+
+## **DATA LOADING AND EXPLORATION**
+
+```{r}
+library(scater)
+library(scran)
+library(scuttle)
+library(SpatialExperiment)
+library(ggspavis)
+library(ComplexHeatmap)
+library(igraph)
+library(patchwork)
+library(ggplot2)
+library(pals)
+```
+
+```{r}
+Filter(function(x) is(get(x), "SpatialExperiment"), ls())
+```
+
+```{r}
+data = load(file = "Breast_ST6.RData")
+
+```
+
+```{r}
+speBreast
+```
+
+```{r}
+dim(speBreast)
+```
+
+```{r}
+assayNames(speBreast)
+```
+
+```{r}
+head(rowData(speBreast))
+```
+
+```{r}
+head(colData(speBreast))
+```
+
+```{r}
+head(spatialCoords(speBreast))
+```
+
+## **DATA VISUALIZATION (ggpavis)**
+
+```{r}
+# plot spatial coordinates (spots)
+plotCoords(speBreast, point_size = 5,)
+```
+
+```{r}
+# plot spot by annotation
+plotCoords(speBreast, annotate = "annotation",
+           point_size = 6, pal = "libd_layer_colors", show_axes = TRUE)
+```
+
+**Top-left spot annotation**
+
+```{r}
+coordinates = spatialCoords(speBreast)
+colnames(coordinates) = c("x","y")
+coordinates = as.data.frame(coordinates)
+
+head(coordinates)
+```
+
+```{r}
+range(coordinates$x)
+range(coordinates$y)
+```
+
+```{r}
+## top-left spot red
+Min_y_Coord <- coordinates$y == min(coordinates$y)
+Min_x_Coord <- coordinates$x == min(coordinates$x[Min_y_Coord])
+
+TopLeftSpot <- rownames(coordinates)[which(Min_x_Coord & Min_y_Coord)]
+colData(speBreast)[, "TopLeftSpot"] <- as.character(colnames(speBreast)==TopLeftSpot)
+
+plotCoords(speBreast, annotate = "TopLeftSpot", point_size = 6, pal = c("grey", "red"))
+```
+
+## **QUALITY CONTROL (**scater library)
+
+```{r}
+speBreast <- addPerCellQC(speBreast)
+head(colData(speBreast))
+```
+
+**QC metrics Visualization**
+
+```{r}
+plotObsQC(speBreast, plot_type = "violin", x_metric = "sum", point_size = 1) + 
+  xlab("Library size")
+
+plotObsQC(speBreast, plot_type = "violin", x_metric = "detected", point_size = 1) + 
+  xlab("Genes per spot")
+
+```
+
+```{r}
+plotObsQC(
+  speBreast, plot_type = "scatter", x_metric = "detected", y_metric = "sum") + 
+  ggtitle("Library size vs. Genes per spot") + labs(x = "detected", y = "sum")
+```
+
+**Threshold selection.**
+
+```{r}
+speBreast$qc_lib_size <- speBreast$sum < 6000
+speBreast$qc_detected <- speBreast$detected < 3000
+table(speBreast$qc_detected, speBreast$qc_lib_size)
+```
+
+```{r}
+plotObsQC(speBreast, plot_type = "violin", x_metric = "sum", 
+          annotate = "qc_lib_size", point_size = 1) + xlab("Library size")
+
+plotObsQC(speBreast, plot_type = "violin", x_metric = "detected", 
+          annotate = "qc_detected", point_size = 1) + xlab("Genes per spot")
+```
+
+```{r}
+plotObsQC(
+  speBreast, plot_type = "scatter", x_metric = "detected",
+  y_metric = "sum", x_threshold = 3000, y_threshold = 6000) + 
+  ggtitle("Library size vs. Genes per spot") + labs(x = "detected", y = "sum")
+```
+
+**QC metrics visualization by different pathology annotations.**
+
+```{r}
+ggplot() + geom_violin(mapping = aes(x = speBreast$annotation, y = speBreast$sum)) + 
+   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+   ggtitle("Library size by tissue") + xlab("") + ylab("sum") + 
+  geom_hline(aes(yintercept = 6000), colour = "red")
+
+ggplot() + geom_violin(mapping = aes(x = speBreast$annotation, y = speBreast$detected)) + 
+   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+   ggtitle("Genes Detected by tissue") + xlab("") + ylab("detected") + 
+  geom_hline(aes(yintercept = 3000), colour = "red")
+```
+
+As observed, Adipocytes have lowest UMIs and genes detected and this could be because they are mostly fat thus containing very little RNA.
+
+**Low-quality spots removal**
+
+```{r}
+speBreast$outliers <- speBreast$qc_lib_size | speBreast$qc_detected
+table(speBreast$outliers, speBreast$annotation)
+```
+
+```{r}
+speBreast <- speBreast[, !speBreast$outliers]
+```
+
+```{r}
+plotCoords(speBreast, annotate = "annotation", 
+           point_size = 6, pal = "libd_layer_colors", show_axes = TRUE)
+```
+
+## **NORMALIZATION (scran)**
+
+Getting rid of all the genes whose expression is zero in all the spots.
+
+```{r}
+dim(speBreast)
+```
+
+```{r}
+speBreast <- speBreast[apply(assay(speBreast) > 0, 1, any),]
+```
+
+```{r}
+dim(speBreast)
+```
+
+Then, calculate library size factors and normalize data.
+
+```{r}
+# calculate library size factors
+speBreast <- computeLibraryFactors(speBreast)
+summary(sizeFactors(speBreast))
+```
+
+```{r}
+hist(sizeFactors(speBreast), breaks = 50, main = "Histogram of size factors")
+```
+
+```{r}
+# calculate logcounts and store the output in a new assay
+speBreast <- logNormCounts(speBreast)
+assayNames(speBreast)
+
+```
+
+## **Feature selection based on top Highly Variable Genes(HVGs)**
+
+```{r}
+# fit mean-variance relationship
+dec <- modelGeneVar(speBreast)
+
+# visualize mean-variance relationship
+plot(dec$mean, dec$total, xlab = "mean (logexpr)", ylab = "variance (logexpr)")
+curve(metadata(dec)$trend(x), add = TRUE, col = "dodgerblue")
+```
+
+```{r}
+dec
+```
+
+```{r}
+# select top HVGs
+top_hvgs <- getTopHVGs(dec, prop = 0.05)
+length(top_hvgs)
+```
+
+## **Dimensionality reduction**
+
+Dimensionality reduction using PCA on the top highly variable genes revealed clear structure in the dataset. In the annotated PCA, spots separated primarily along a tumor–stromal axis on PC1, with additional variation associated with necrotic and vascular regions on PC2. Tumor spots were broadly dispersed, indicating multiple transcriptional subgroups, whereas lymphocytes formed a compact cluster positioned near stromal and CAF spots.
+
+Application of the Leiden algorithm to the PCA neighbor graph identified six transcriptionally coherent clusters that matched the major groupings visible in PCA space. These clusters included distinct tumor-associated groups(4,5), stromal/CAF clusters(1,2,3), and a necrotic/blood vessel cluster(6), with some clusters showing intermediate positions between stromal and CAF populations.
+
+UMAP projections provided a non-linear visualization of the same relationships, showing stromal, CAF, and immune spots forming a connected manifold, while tumor and necrotic/angiogenic clusters formed separate islands. Leiden labeling on the UMAP highlighted the same cluster structure and transitions observed in PCA, confirming consistent grouping of transcriptionally similar spots across both dimensionality reduction approaches.
+
+#### **PCA**
+
+```{r}
+set.seed(12345)
+
+speBreast <- runPCA(speBreast, subset_row = top_hvgs)
+reducedDimNames(speBreast)
+
+```
+
+```{r}
+dim(reducedDim(speBreast, "PCA"))
+```
+
+```{r}
+colnames(reducedDim(speBreast, "PCA"))
+```
+
+```{r}
+# plot annotation in PCA reduced dimensions
+plotDimRed(speBreast, plot_type = "PCA", annotate = "annotation", 
+           pal = "libd_layer_colors", point_size = 3)
+
+```
+
+#### **UMAP**
+
+```{r}
+speBreast <- runUMAP(speBreast, dimred = "PCA")
+
+reducedDimNames(speBreast)
+
+```
+
+```{r}
+dim(reducedDim(speBreast, "UMAP"))
+```
+
+```{r}
+colnames(reducedDim(speBreast, "UMAP"))
+
+```
+
+```{r}
+# plot annotation in UMAP reduced dimensions
+plotDimRed(speBreast, plot_type = "UMAP", annotate = "annotation", 
+           pal = "libd_layer_colors", point_size = 3)
+
+```
+
+## **Clustering**
+
+```{r}
+k <- 10
+g <- buildSNNGraph(speBreast, k = k, use.dimred = "PCA")
+k <- igraph::cluster_leiden(g, objective_function="modularity", resolution=1.2)
+speBreast$Leiden <- factor(k$membership)
+table(speBreast$Leiden)
+```
+
+```{r}
+# plot clusters in spatial x-y coordinates
+plotCoords(speBreast, annotate = "Leiden", pal = "libd_layer_colors", point_size = 6)
+```
+
+```{r}
+# plot clusters in PCA reduced dimensions
+plotDimRed(speBreast, plot_type = "PCA", annotate = "Leiden", 
+           pal = "libd_layer_colors", point_size = 3)
+```
+
+```{r}
+# plot clusters in UMAP reduced dimensions
+plotDimRed(speBreast, plot_type = "UMAP", annotate = "Leiden", 
+           pal = "libd_layer_colors", point_size = 3)
+
+```
+
+```{r}
+table(
+  Leiden = speBreast$Leiden,
+  Annotation = speBreast$annotation
+)
+```
+
+## **Differential Expression**
+
+When we perfomed differential expression across Leiden clusters, The heatmap of average gene expression showed distinct expression signatures between groups. Clusters 1 and 3 displayed high expression of extracellular matrix and stromal markers such as **COL1A1, COL3A1, DCN, POSTN, SPARC, and MMP2**, consistent with **CAF-rich regions**. In contrast, clusters 4 and 5 showed higher expression of tumor-associated genes including **MUCL1, MAL2, AZGP1, ASPH, and CYP4Z1**, consistent with **tumor-rich regions**. Immune-related genes such as **IGHG3, IGKC, and CD68** showed localized enrichment in specific clusters, indicating immune infiltration in restricted areas.
+
+```{r}
+mgs <- findMarkers(speBreast, groups = speBreast$Leiden, direction = "up")
+top <- lapply(mgs, \(df) rownames(df)[df$Top <= 2])
+top <- unique(unlist(top))
+length(top)
+```
+
+```{r}
+# compute cluster-wise averages
+pbs <- aggregateAcrossCells(speBreast, ids = speBreast$Leiden, subset.row = top,
+                            use.assay.type = "logcounts", statistics = "mean")
+# use gene symbols as feature names
+mtx <- t(assay(pbs))
+colnames(mtx) <- rowData(pbs)$symbol
+
+```
+
+```{r}
+library(ComplexHeatmap)
+Heatmap(mat = scale(mtx), name = "average expr", col = c("#FCFDD4", rev(viridis::magma(10))))
+```
+
+These transcriptional profiles align with the dimensionality reduction findings. Clusters enriched in collagen and matrix genes correspond to the CAF/stromal regions seen in PCA/UMAP space, while immunoglobulin-rich clusters match the lymphocyte and immune populations that localized adjacent to stroma rather than tumor, supporting an immune-excluded architecture. The hypoxia/stress-associated clusters are consistent with the necrotic/angiogenic regions identified along PC2. Overall, the heatmap confirms the presence of distinct tumor, CAF/stromal, immune, and hypoxic/angiogenic compartments previously identified by PCA, UMAP, and Leiden clustering.
+
+# RESULTS AND DISCUSSION
+
+We proposed that breast tumors contain spatially localized COXIS-high tumor nests adjacent to LRRC15⁺ CAF-rich stroma, forming organized tumor–stroma ecosystems potentially linked to therapy resistance.\
+Dimensionality reduction and clustering revealed distinct transcriptional regions, which we broadly grouped as CAF-rich (clusters 1 and 3) and tumor-rich (clusters 4 and 5) based on marker-expression patterns in the heatmap.
+
+To compare these compartments, we performed gene-signature scoring for tumor and CAF groups we obtained after clustering.\
+We also carried out Gene Ontology pathway enrichment analysis separately in CAF-rich and tumor-rich groups to identify dominant biological processes. These analyses allowed us to assess how tumor and CAF regions differ transcriptionally and functionally, and whether their spatial organization supported our hypothesis.
+
+```{r}
+# 1) Defining CAF vs tumor groups 
+
+caf_clusters <- c("1","3")
+tumor_clusters <- c("4","5")
+
+group <- ifelse(speBreast$Leiden %in% caf_clusters,
+                "CAF",
+                ifelse(speBreast$Leiden %in% tumor_clusters,
+                       "Tumor",
+                       NA))
+
+speBreast$group <- group
+
+# keeping only CAF and tumor
+spe_sub_sig <- speBreast[, !is.na(speBreast$group)]
+
+spe_sub_GO <- speBreast[, !is.na(speBreast$group)]
+
+
+```
+
+### **GENE-SIGNATURE SCORING**
+
+```{r}
+library(signifinder)
+```
+
+```{r}
+library(org.Hs.eg.db)
+
+symbols <- mapIds(
+  org.Hs.eg.db,
+  keys = rownames(spe_sub_sig),
+  keytype = "ENSEMBL",
+  column = "SYMBOL",
+  multiVals = "first"
+)
+
+rownames(spe_sub_sig) <- symbols
+```
+
+```{r}
+spe_sig <- multipleSign(
+  dataset = spe_sub_sig,
+  inputType = "rnaseq",
+  tissue = "breast",
+  whichAssay = "logcounts"   # <<< replace with the normalized assay you actually have
+)
+```
+
+```{r}
+#checking signature goodness
+evaluationSignPlot(spe_sig, whichAssay = "logcounts")
+```
+
+Several signatures showed high goodness-of-fit in the dataset, with LRRC15-CAF, EMT, and COXIS scoring highest and most signatures having \>80% gene coverage. Zero-value proportions varied across signatures, and correlations with total expression or sparsity were generally low, indicating minimal technical bias.
+
+We then identified which biological programs were preferentially enriched in each compartment by comparing the two groups based on the gene-signatures scored.
+
+Gene-signature scoring showed clear differences between the two groups. COXIS scores were significantly higher in tumor-rich clusters (4 and 5), while LRRC15-CAF and EMT signatures were significantly higher in CAF-rich clusters (1 and 3). Thus, tumor regions preferentially scored high for COXIS, whereas CAF-rich regions preferentially scored high for LRRC15-CAF and EMT programs.
+
+```{r}
+
+df <- as.data.frame(colData(spe_sig))
+
+ggplot(df, aes(x = group, y = 	
+COXIS_Bonavita, fill = group)) +
+    geom_boxplot() +
+    theme_minimal() +
+  labs(title = "COXIS Bonavita by Group") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+
+ggplot(df, aes(x = group, y = LRRC15CAF_Dominguez, fill = group)) +
+    geom_boxplot() +
+    theme_minimal() +
+  labs(title = "LRRC15CAF_Dominguez by Group") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+
+
+ggplot(df, aes(x = group, y = EMT_Cheng, fill = group)) +
+    geom_boxplot() +
+    theme_minimal() +
+  labs(title = "EMT_Cheng by Group") +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold"))
+
+
+```
+
+```{r}
+wilcox.test(COXIS_Bonavita ~ group, data = df)
+wilcox.test(LRRC15CAF_Dominguez ~ group, data = df)
+wilcox.test(EMT_Cheng ~ group, data = df)
+```
+
+The divergent signature profiles indicate distinct but coordinated tumor and stromal programs. Elevated COXIS scores in tumor-rich clusters are consistent with prior work showing activation of COXIS-related inflammatory and oxidative stress programs in tumor nests associated with therapeutic adaptation (***Bonavita et al., Cell 2020***). Higher LRRC15-CAF signatures in CAF-rich clusters agree with studies identifying LRRC15⁺ CAFs as a specialized fibroblast population enriched in treated and resistant tumors (***Dominguez et al., Cancer Cell 2020; Elyada et al., Cancer Cell 2019***). Concurrent enrichment of EMT signatures within CAF-rich regions is consistent with the established role of CAFs in promoting EMT and invasion (***Nieto et al., Cell 2016; Cheng et al., Nat Commun 2021***). Taken together, these findings support a model in which COXIS-high tumor nests coexist with LRRC15⁺ CAF-rich stroma as spatially organized tumor–stroma ecosystems linked to stress adaptation and therapy resistance (***Kieffer et al., Cancer Discovery 2020***).
+
+### **GENE ONTOLOGY PATHWAY ENRICHMENT**
+
+```{r}
+library(clusterProfiler)
+
+# Differential expression 
+
+de <- findMarkers(
+  spe_sub_GO,
+  groups = spe_sub_GO$group,
+  direction = "up"   # both up and down
+)
+
+# Inspection
+
+caf_vs_tumor <- de$CAF[ de$CAF$FDR < 0.05, ]   # genes up in CAF relative to tumor
+tumor_vs_caf <- de$Tumor[ de$Tumor$FDR < 0.05, ] # genes up in tumor relative to CAF
+
+head(caf_vs_tumor)
+head(tumor_vs_caf)
+
+```
+
+```{r}
+
+# Ensemble to ENTREIDz
+
+caf_genes <- rownames(caf_vs_tumor)
+
+caf_entrez <- bitr(
+  caf_genes,
+  fromType = "ENSEMBL",
+  toType = "ENTREZID",
+  OrgDb = org.Hs.eg.db
+)
+
+tumor_genes <- rownames(tumor_vs_caf)
+
+tumor_entrez <- bitr(
+  tumor_genes,
+  fromType = "ENSEMBL",
+  toType = "ENTREZID",
+  OrgDb = org.Hs.eg.db
+)
+
+
+```
+
+```{r}
+# Enrichment -----------
+
+# CAF
+
+ego_caf <- enrichGO(
+  gene = caf_entrez$ENTREZID,
+  OrgDb = org.Hs.eg.db,
+  ont = "BP",
+  pAdjustMethod = "BH",
+  readable = TRUE
+)
+
+# TUMOR
+
+ego_tumor <- enrichGO(
+  gene = tumor_entrez$ENTREZID,
+  OrgDb = org.Hs.eg.db,
+  ont = "BP",
+  readable = TRUE
+)
+
+head(ego_caf)
+head(ego_tumor)
+
+```
+
+Gene Ontology enrichment analysis revealed distinct pathway programs in CAF-rich and tumor-rich clusters. CAF-rich clusters were enriched for pathways related to extracellular matrix organization, extracellular structure organization, positive regulation of cell adhesion, leukocyte cell–cell adhesion, and regulation of T-cell activation and lymphocyte differentiation. In contrast, tumor-rich clusters were enriched for pathways associated with nucleoside phosphate biosynthesis, mitochondrial organization, aerobic respiration, macromolecule catabolic processes, regulation of protein stability, and energy metabolism. These differences indicate that CAF-rich regions are dominated by adhesion, matrix, and immune-regulatory pathways, whereas tumor-rich regions are dominated by metabolic and biosynthetic programs.
+
+```{r}
+barplot(ego_caf, showCategory = 10, title = "CAF-enriched pathways")
+barplot(ego_tumor, showCategory = 10, title = "Tumor-enriched pathways")
+```
+
+The pathway enrichment analysis further supports the presence of specialized tumor–stroma ecosystems. CAF-rich clusters showed strong enrichment of extracellular matrix organization and cell adhesion pathways, consistent with matrix-remodeling and physical barrier functions of activated CAFs (***Kalluri, Nat Rev Cancer 2016; Elyada et al., Cancer Cell 2019***). Enrichment of leukocyte adhesion, regulation of T-cell activation, and lymphocyte differentiation pathways suggests that CAF regions actively participate in immune regulation and immune exclusion, in line with reports linking LRRC15⁺ CAFs and TGF-β–driven stroma to immune checkpoint blockade resistance (***Dominguez et al., Cancer Cell 2020; Mariathasan et al., Nature 2018***). Conversely, tumor-rich clusters were enriched in mitochondrial organization, oxidative metabolism, nucleotide biosynthesis, and protein stability pathways, reflecting elevated metabolic and biosynthetic demands of proliferating tumor nests (***Pavlova & Thompson, Cell Metab 2016; Vander Heiden et al., Science 2009***). Together with the signature analysis, these pathway programs support a model in which metabolically active, COXIS-high tumor nests coexist with LRRC15⁺ CAF-rich, matrix-remodeling stroma that modulates immune activation, forming a spatially organized microenvironment associated with treatment adaptation and immune evasion.
+
+# CONCLUSION
+
+Our spatial transcriptomic analysis supports the hypothesis that COXIS-high tumor nests are spatially adjacent to LRRC15⁺ CAF-rich stroma, forming organized tumor–stroma ecosystems in breast tumors. Dimensionality reduction, clustering, signature scoring, and pathway enrichment collectively showed that tumor-rich clusters were COXIS-high and metabolically active, while CAF-rich clusters were LRRC15-CAF–high, EMT-high, and enriched for extracellular matrix and immune-regulatory pathways.
+
+### **LIMITATIONS**
+
+One of the limitations of our study is that it is based on a single spatial transcriptomics dataset and may not capture the full biological variability present across breast cancer patients and molecular subtypes.\
+Secondly, the spatial resolution of the platform means that each spot may contain a mixture of cell types, so regions classified as “tumor-rich” or “CAF-rich” are unlikely to be composed exclusively of those respective populations.\
+The other issue is that the analytical approaches used here i.e. gene-signature scoring and Gene Ontology enrichment are correlative; they reveal strong associations between COXIS-high tumor nests and LRRC15⁺ CAF-rich stroma but cannot establish whether one process causes the other or directly drives immune-checkpoint blockade resistance.
+
+### **FUTURE DIRECTIONS**
+
+1.  Future studies should analyze larger cohorts and multiple tumor subtypes to test whether the same spatial ecosystem (COXIS-high tumor + LRRC15⁺ CAF stroma) is consistently observed across patients.
+
+2.  Higher resolution approaches such as single-cell spatial transcriptomics, spatial proteomics, and multiplex imaging should be used to more precisely separate tumor cells, CAFs, immune cells, and vascular cells within each spot.
+
+3.  Functional experiments are needed to test causality, including:
+
+    -   co-culture of tumor cells with LRRC15⁺ CAFs
+
+    -   inhibition of COX-2/COXIS or TGF-β pathways
+
+    -   in vivo models testing immune infiltration and ICB response\
+
+        These approaches might be able to determine whether altering CAFs or COXIS programs changes immune exclusion or therapy resistance, moving beyond correlation.
